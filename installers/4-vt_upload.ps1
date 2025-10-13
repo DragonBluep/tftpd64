@@ -1,120 +1,149 @@
-<#  vt_upload.ps1 — VirusTotal v3 uploader (PS 5.1+ compatible)
-    Usage:
-      $env:VT_API_KEY = 'YOUR_API_KEY'
-      powershell -ExecutionPolicy Bypass -File .\vt_upload.ps1 -Path "..\ARTS\BIN\dist\4.72\signed\" -ApiKey f1..
-      # Or pass a directory; the script will expand to *.exe inside it.
-#>
+# vt_upload.ps1 — VirusTotal v3 uploader + report
+# PowerShell 5.1+, supporte fichiers multiples et wildcards
 
 param(
-  [Parameter(Mandatory=$true)]
-  [string[]]$Path,
+  [Parameter(Mandatory = $true)] [string[]]$FilePath,
   [string]$ApiKey = $env:VT_API_KEY,
-  [switch]$Private,
-  [switch]$NoWait,
-  [int]$PollSeconds = 4,
-  [int]$MaxPolls = 150
+  [int]$WaitSeconds = 120,          # temps max d'attente de l'analyse après upload
+  [int]$PollIntervalSeconds = 3     # intervalle de polling de l'analyse
 )
 
-if (-not $ApiKey) { throw "Set -ApiKey or `$env:VT_API_KEY`." }
+if (-not $ApiKey) { Write-Host "Missing API key. Use -ApiKey or set VT_API_KEY." -ForegroundColor Red; exit 1 }
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$VTBase  = "https://www.virustotal.com/api/v3"
-$Headers = @{ "x-apikey" = $ApiKey }
-
-function Resolve-Targets([string[]]$Paths) {
-  $items = @()
-  foreach ($p in $Paths) {
-    if (Test-Path -LiteralPath $p -PathType Container) {
-      $items += Get-ChildItem -LiteralPath $p -Filter *.exe -File
-    } else {
-      $items += Get-ChildItem -LiteralPath $p -File
+function Invoke-VT {
+  param([string]$Uri, [string]$Method = "GET", $Body = $null, [int]$TimeoutSec = 60)
+  $headers = @{ "x-apikey" = $ApiKey }
+  try {
+    if ($Method -eq "GET") { return Invoke-RestMethod -Uri $Uri -Headers $headers -Method GET -TimeoutSec $TimeoutSec -ErrorAction Stop }
+    elseif ($Method -eq "POST") {
+      return Invoke-RestMethod -Uri $Uri -Headers $headers -Method POST -Body $Body -TimeoutSec $TimeoutSec -ErrorAction Stop
     }
-  }
-  $items | Sort-Object FullName -Unique
-}
-
-function Get-UploadUrl([int64]$Size, [switch]$UsePrivate) {
-  if ($UsePrivate) {
-    if ($Size -le 32MB) { return "$VTBase/private/files" }
-    return (Invoke-RestMethod -Headers $Headers -Uri "$VTBase/private/files/upload_url" -Method GET).data
-  } else {
-    if ($Size -le 32MB) { return "$VTBase/files" }
-    return (Invoke-RestMethod -Headers $Headers -Uri "$VTBase/files/upload_url" -Method GET).data
+  } catch {
+    throw $_
   }
 }
 
-# PS 5.1-safe multipart/form-data upload using HttpClient
-Add-Type -AssemblyName System.Net.Http
-Add-Type -AssemblyName System.Net.Http.WebRequest
-function Post-FileMultipart([string]$Uri, [System.IO.FileInfo]$File) {
+function Get-VTFileInfo {  # /files/{sha256}
+  param([string]$Sha256)
+  try { return Invoke-VT -Uri "https://www.virustotal.com/api/v3/files/$Sha256" -Method GET -TimeoutSec 30 }
+  catch { return $null }
+}
+
+function Get-VTAnalysis {  # /analyses/{id}
+  param([string]$AnalysisId)
+  try { return Invoke-VT -Uri "https://www.virustotal.com/api/v3/analyses/$AnalysisId" -Method GET -TimeoutSec 30 }
+  catch { return $null }
+}
+
+function Wait-VTAnalysis {
+  param([string]$AnalysisId, [int]$TimeoutSec = 120, [int]$Poll = 3)
+  $sw = [Diagnostics.Stopwatch]::StartNew()
+  while ($sw.Elapsed.TotalSeconds -lt $TimeoutSec) {
+    $a = Get-VTAnalysis -AnalysisId $AnalysisId
+    if ($a -and $a.data.attributes.status -eq 'completed') { return $a }
+    Start-Sleep -Seconds $Poll
+  }
+  return $null
+}
+
+function Show-VTFileSummary {
+  param($FileInfo, [string]$Sha256)
+  if (-not $FileInfo) { Write-Host "⚠️  Aucun détail d’analyse disponible." -ForegroundColor Yellow; return }
+  $attr = $FileInfo.data.attributes
+  $stats = $attr.last_analysis_stats
+  $msg = "Harmless=$($stats.harmless)  Malicious=$($stats.malicious)  Suspicious=$($stats.suspicious)  Undetected=$($stats.undetected)  Timeout=$($stats.timeout)"
+  $reputation = $attr.reputation
+  $size = $attr.size
+  $type = $attr.type_description
+  Write-Host ("📊 " + $msg)
+  if ($reputation -ne $null) { Write-Host ("🧭 Reputation: {0}" -f $reputation) }
+  if ($size -ne $null -and $type) { Write-Host ("📦 {0} bytes — {1}" -f $size, $type) }
+  Write-Host ("🔗 GUI: https://www.virustotal.com/gui/file/{0}" -f $Sha256)
+}
+
+function Send-VTFile {
+  param([string]$Path, [int]$TimeoutSec = 180)
   $handler = New-Object System.Net.Http.HttpClientHandler
-  $client  = New-Object System.Net.Http.HttpClient($handler)
+  $client  = [System.Net.Http.HttpClient]::new($handler)
   $client.DefaultRequestHeaders.Add("x-apikey", $ApiKey)
+  $client.Timeout = [TimeSpan]::FromSeconds($TimeoutSec)
+
   $content = New-Object System.Net.Http.MultipartFormDataContent
-  $fs = [System.IO.File]::OpenRead($File.FullName)
-  try {
-    $sc = New-Object System.Net.Http.StreamContent($fs)
-    $sc.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse("application/octet-stream")
-    $content.Add($sc, "file", $File.Name)
-    $resp = $client.PostAsync($Uri, $content).Result
-    $resp.EnsureSuccessStatusCode() | Out-Null
-    $json = $resp.Content.ReadAsStringAsync().Result
-    return ($json | ConvertFrom-Json)
-  } finally {
-    $content.Dispose(); $client.Dispose(); $fs.Dispose()
+  $fs = [System.IO.FileStream]::new($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read)
+  $fileContent = New-Object System.Net.Http.StreamContent($fs)
+  $fileContent.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse("application/octet-stream")
+  $null = $content.Add($fileContent, "file", [IO.Path]::GetFileName($Path))
+
+  $resp = $client.PostAsync("https://www.virustotal.com/api/v3/files", $content).Result
+  $fs.Dispose(); $content.Dispose(); $client.Dispose()
+  if (-not $resp.IsSuccessStatusCode) { throw "Upload failed: $($resp.StatusCode) $($resp.ReasonPhrase)" }
+  return ($resp.Content.ReadAsStringAsync().Result | ConvertFrom-Json)
+}
+
+# --- Main ---
+foreach ($p in $FilePath) {
+  $items = @()
+
+  if (Test-Path -LiteralPath $p) {
+    $it = Get-Item -LiteralPath $p
+    if ($it.PSIsContainer) {
+      $items = Get-ChildItem -LiteralPath $p -Filter *.exe -File -ErrorAction SilentlyContinue
+    } else {
+      $items = ,$it
+    }
+  } else {
+    $items = Get-ChildItem -Path $p -File -ErrorAction SilentlyContinue
   }
-}
 
-function Wait-Analysis([string]$Id) {
-  for ($i=0; $i -lt $MaxPolls; $i++) {
-    $a = Invoke-RestMethod -Headers $Headers -Uri "$VTBase/analyses/$Id" -Method GET
-    if ($a.data.attributes.status -eq 'completed') { return $a }
-    Start-Sleep -Seconds $PollSeconds
+  if (-not $items -or $items.Count -eq 0) {
+    Write-Host "⚠️  Aucun fichier correspondant: $p" -ForegroundColor Yellow
+    continue
   }
-  throw "Timeout waiting for $Id"
-}
 
-function Get-Report([string]$Sha256) {
-  Invoke-RestMethod -Headers $Headers -Uri "$VTBase/files/$Sha256" -Method GET
-}
+  foreach ($file in $items) {
+    $full = $file.FullName
+    try { $sha = (Get-FileHash -Algorithm SHA256 -LiteralPath $full).Hash.ToLower() }
+    catch { Write-Host "❌ Impossible de calculer le SHA256: $full — $_" -ForegroundColor Red; continue }
 
-$files = Resolve-Targets $Path
-if (-not $files) { Write-Error "No files matched."; exit 1 }
+    Write-Host "`n📄 $($file.Name) — SHA256: $sha"
 
-$rows = @()
-foreach ($fi in $files) {
-  $sha = (Get-FileHash -LiteralPath $fi.FullName -Algorithm SHA256).Hash.ToLower()
-  Write-Host ">> Uploading $($fi.Name) (SHA256=$sha)..."
-  try {
-    $upl = Get-UploadUrl -Size $fi.Length -UsePrivate:$Private
-    $submit = Post-FileMultipart -Uri $upl -File $fi
-    $analysisId = $submit.data.id
-
-    if ($NoWait) {
-      $rows += [pscustomobject]@{File=$fi.Name; Sha256=$sha; AnalysisId=$analysisId; Link="https://www.virustotal.com/gui/file/$sha"}
+    # 1) Le fichier existe déjà sur VT ?
+    $info = Get-VTFileInfo -Sha256 $sha
+    if ($info) {
+      Write-Host "✅ Déjà présent sur VirusTotal."
+      Show-VTFileSummary -FileInfo $info -Sha256 $sha
       continue
     }
 
-    $done   = Wait-Analysis $analysisId
-    $sha_dl = $done.meta.file_info.sha256
-    if (-not $sha_dl) { $sha_dl = $sha }
-    $rep    = Get-Report $sha_dl
-    $s      = $rep.data.attributes.last_analysis_stats
-    $link   = "https://www.virustotal.com/gui/file/$sha_dl"
-    "{0}  =>  M:{1}  S:{2}  H:{3}  U:{4}  {5}" -f $fi.Name, $s.malicious, $s.suspicious, $s.harmless, $s.undetected, $link | Write-Host
+    # 2) Sinon on upload puis on attend l’analyse (optionnel)
+    Write-Host "🚀 Uploading..."
+    try {
+      $upload = Send-VTFile -Path $full -TimeoutSec 300
+      $analysisId = $upload.data.id
+      Write-Host "🆔 Analysis ID: $analysisId"
 
-    $rows += [pscustomobject]@{
-      File=$fi.Name; Sha256=$sha_dl; AnalysisId=$analysisId
-      Malicious=$s.malicious; Suspicious=$s.suspicious; Harmless=$s.harmless; Undetected=$s.undetected
-      Link=$link
+      if ($WaitSeconds -gt 0) {
+        Write-Host "⏳ Attente de la fin d’analyse (max ${WaitSeconds}s)..."
+        $analysis = Wait-VTAnalysis -AnalysisId $analysisId -TimeoutSec $WaitSeconds -Poll $PollIntervalSeconds
+        if ($analysis -and $analysis.meta.'file_info'.sha256) {
+          $finalSha = $analysis.meta.'file_info'.sha256
+          $final = Get-VTFileInfo -Sha256 $finalSha
+          if ($final) {
+            Write-Host "✅ Analyse terminée."
+            Show-VTFileSummary -FileInfo $final -Sha256 $finalSha
+          } else {
+            Write-Host "⚠️  Analyse complétée, mais impossible de récupérer le détail fichier." -ForegroundColor Yellow
+          }
+        } else {
+          Write-Host "⚠️  Analyse non terminée dans le temps imparti." -ForegroundColor Yellow
+          Write-Host ("🔗 Analysis: https://www.virustotal.com/gui/file-analysis/{0}" -f $analysisId)
+        }
+      } else {
+        Write-Host ("🔗 Analysis: https://www.virustotal.com/gui/file-analysis/{0}" -f $analysisId)
+      }
+    } catch {
+      Write-Host "❌ $_" -ForegroundColor Red
     }
-  } catch {
-    Write-Warning "Failed on $($fi.Name): $($_.Exception.Message)"
-    $rows += [pscustomobject]@{File=$fi.Name; Sha256=$sha; AnalysisId=$null; Malicious=$null; Suspicious=$null; Harmless=$null; Undetected=$null; Link=$null; Error=$_.Exception.Message}
   }
-}
-
-if ($rows.Count) {
-  $csv = "vt_results_{0:yyyyMMdd_HHmmss}.csv" -f (Get-Date)
-  $rows | Export-Csv -Path $csv -NoTypeInformation -Encoding UTF8
-  Write-Host "Saved CSV: $csv"
 }

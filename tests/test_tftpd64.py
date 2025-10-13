@@ -9,7 +9,12 @@ Configure via env:
   BLOCK_SIZE       (default: 512)
   TIMEOUT_SEC      (default: 5.0)
 
-Run:  pytest -q
+Installation (debian) : sudo apt install python3-pytest python3-pytest-timeout
+Or 
+                        python -m venv .venv && source .venv/bin/activate
+                        pip install -U pytest pytest-timeout
+
+Run:                    pytest -q test_tftpd64
 """
 import os
 import random
