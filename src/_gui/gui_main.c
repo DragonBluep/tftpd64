@@ -739,6 +739,8 @@ int       Rc;
 		  // GUI has to manage TFTP CLIENT tab -> no necessary to inform service part
 	      TR_ChgTabControl (hWnd, TFTPD32_TFTP_CLIENT, 
 							 sGuiSettings.uServices & TFTPD32_TFTP_CLIENT ? SERVICE_RUNNING : SERVICE_STOPPED);
+           // fallthrough to save also DHCP settings 
+		  PostMessage(hWnd, WM_SAVE_DHCP_SETTINGS, 0, 0);
           break;
       
       case WM_SAVE_DHCP_SETTINGS :

@@ -1,4 +1,3 @@
-
 """
 Minimal TFTP client utilities for testing Tftpd64 (RFC 1350).
 No third-party deps. Python 3.8+.
@@ -34,6 +33,14 @@ def _parse_error(pkt:bytes) -> Tuple[int,str]:
     _, errcode = struct.unpack("!HH", pkt[:4])
     msg = pkt[4:].split(b'\x00',1)[0].decode(errors='replace')
     return errcode, msg
+
+def parse_tftp_error(pkt: Optional[bytes]) -> Optional[Tuple[int, str]]:
+    """
+    Public helper: return (code, message) if pkt is a TFTP ERROR(5), else None.
+    """
+    if not pkt or len(pkt) < 5 or pkt[:2] != struct.pack("!H", OP_ERROR):
+        return None
+    return _parse_error(pkt)
 
 def tftp_rrq(host:str, port:int, filename:str, timeout:float=5.0, blocksize:int=512) -> bytes:
     """Read a file from TFTP server. Returns the content as bytes."""

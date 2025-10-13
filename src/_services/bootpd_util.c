@@ -317,7 +317,7 @@ char szBuf[64];
 
      sParamDHCP = *pNewParamDHCP;
 
-     for (Ark=0 ; Ark<<SizeOfTab (tDHCPd32Entry) ; Ark++)
+     for (Ark=0 ; Ark < SizeOfTab (tDHCPd32Entry) ; Ark++)
         AsyncSaveKey (  TFTPD32_DHCP_KEY,
                         tDHCPd32Entry [Ark].szEntry,
                         tDHCPd32Entry [Ark].pValue,

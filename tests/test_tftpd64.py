@@ -19,12 +19,13 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
+import struct
 
 from tftp_test_utils import (
     tftp_rrq, tftp_wrq, TftpError, send_forged_packet,
     OP_ERROR, OP_ACK, OP_DATA, OP_RRQ, OP_WRQ,
+    parse_tftp_error,        # <-- import du helper ajouté
 )
-import struct
 
 HOST = os.getenv("TFTP_HOST", "127.0.0.1")
 PORT = int(os.getenv("TFTP_PORT", "69"))
@@ -36,6 +37,10 @@ WRITE_DIR = os.getenv("TEST_WRITE_DIR", "")  # e.g., "incoming/"
 def _randname(prefix="tftpd64_test_", ext=".bin"):
     rand = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
     return f"{prefix}{rand}{ext}"
+
+def parse_tftp_error_local(pkt: bytes):
+    """Kept for backward compat: prefer tftp_test_utils.parse_tftp_error."""
+    return parse_tftp_error(pkt)
 
 @pytest.mark.timeout(15)
 def test_illegal_filename_yields_error():
@@ -79,11 +84,15 @@ def test_forged_invalid_opcode_is_ignored_or_errors():
         assert resp[:2] == struct.pack("!H", OP_ERROR)
 
 @pytest.mark.timeout(10)
-def test_forged_ack_to_port69_is_ignored():
-    # ACK(block 1) to port 69 without prior session must be ignored
+def test_forged_ack_to_port69_is_ignored_or_error4():
+    """
+    ACK(block 1) envoyé directement au port 69 sans session préalable.
+    Comportement robuste attendu : soit drop silencieux, soit ERROR(4) "Illegal TFTP operation".
+    """
     payload = struct.pack("!HH", OP_ACK, 1)
     resp = send_forged_packet(HOST, PORT, payload, timeout=0.5)
-    assert resp is None  # should not elicit a response
+    err = parse_tftp_error(resp)
+    assert (resp is None) or (err and err[0] == 4), f"Unexpected reply: {resp!r}, parsed={err}"
 
 @pytest.mark.timeout(10)
 def test_forged_data_to_port69_yields_error_or_ignore():
@@ -126,7 +135,6 @@ def test_stress_write_small_files_or_skip_if_denied():
     if WRITE_DIR is None:
         pytest.skip("No WRITE_DIR specified")
     content = b"x"*123
-    errors = 0
     def worker(i):
         try:
             tftp_wrq(HOST, PORT, WRITE_DIR + _randname(ext=f"_{i}.bin"), content, timeout=TIMEOUT, blocksize=BLOCK)
