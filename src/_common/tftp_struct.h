@@ -22,14 +22,14 @@ enum e_TftpRetCode { TFTP_TRF_RUNNING, TFTP_TRF_SUCCESS, TFTP_TRF_STOPPED, TFTP_
 // settings for the current transfer
 struct S_Trf_Settings
 {
-    DWORD           dwPacketSize;     // Size of a data packet : Note this is a key data
+    DWORD       dwPacketSize;     // Size of a data packet : Note this is a key data
                                       // since if size of received packet != dwPacketSize
                                       // transfer is terminated
-    DWORD           dwTimeout;        // Timeout
-    unsigned        TftpMode;         // transfer mode, only binary mode is supported
-    unsigned        ExtraWinSize;     // Data to sent without waiting for ACK 
-    DWORD           dwFileSize;       // -1 if not set
-    DWORD           dwMcastAddr;      // Multicast address   
+    DWORD       dwTimeout;        // Timeout
+    unsigned    TftpMode;         // transfer mode, only binary mode is supported
+    unsigned    ExtraWinSize;     // Data to sent without waiting for ACK 
+    __int64     qwFileSize;       // -1 if not set
+    DWORD       dwMcastAddr;      // Multicast address   
 };      // struct S_Trf_Settings
 
 // Buffers
@@ -45,13 +45,13 @@ struct S_Trf_Buffers
 // transfer stats and progress bar : not mandatory 
 struct S_Trf_Statistics
 {
-    DWORD          dwTransfert;     // number of simultaned trf
-    DWORD          dwTotalBytes;    // number of transferred bytes
-    DWORD          dwTotalTimeOut;  // for stat
-    DWORD          dwTransferSize;  // transfer size (read from SIZE option)
-    time_t         StartTime;
-    time_t         dLastUpdate;     // Last gauge update (seconds)
-	DWORD          ret_code;
+    DWORD      dwTransfert;     // number of simultaned trf
+    __int64    qwTotalBytes;    // number of transferred bytes
+    __int64    qwTransferSize;  // transfer size (GetFileSizeEx)
+    DWORD      dwTotalTimeOut;  // for stat
+    time_t     StartTime;
+    time_t     dLastUpdate;     // Last gauge update (seconds)
+	DWORD      ret_code;
 } ;         // struct S_Trf_Statistics
 // control data
 struct S_Trf_Control

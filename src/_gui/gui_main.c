@@ -86,7 +86,13 @@ HWND hwndMain = GetParent (GetParent (hwnd));
 
 static int comp (const struct S_IPAddressEntry *a, const struct S_IPAddressEntry *b)
 {
-	return lstrcmp (a->sz, b->sz);
+	// Detect IPv4 127.x.x.x or IPv6 ::1 and put them at the end of the list
+	// note that ::1 should appear before 127.0.0.1
+    if ( strncmp(a->sz, "127.", 4)==0 ||  strcmp(a->sz, "::1")==0 )
+        return 1;
+    if ( strncmp(b->sz, "127.", 4)==0 ||  strcmp(b->sz, "::1")==0 )
+		return -1;
+	return strcmp (a->sz, b->sz);
 }
 
 

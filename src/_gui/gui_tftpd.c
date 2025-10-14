@@ -99,8 +99,8 @@ char szTxt [512];
   switch (pTftpGui->stat.ret_code) 
   {
 	case TFTP_TRF_RUNNING :
-	  if (pTftpGui->stat.dwTransferSize > 100)
-          wsprintf (szTxt, "%u%%", pTftpGui->stat.dwTotalBytes/(pTftpGui->stat.dwTransferSize/100));
+	  if (pTftpGui->stat.qwTransferSize >= 100) // do not divide by zero
+          wsprintf (szTxt, "%I64d%%", pTftpGui->stat.qwTotalBytes/(pTftpGui->stat.qwTransferSize/100));
 	  break;
 	case TFTP_TRF_SUCCESS : 
 		lstrcpy (szTxt, "100%");
@@ -114,12 +114,12 @@ char szTxt [512];
   }
   ListView_SetItemText (hListV, itemPos, FD_PROGRESS, szTxt);
 
-  wsprintf (szTxt, "%u", pTftpGui->stat.dwTotalBytes);
+  wsprintf (szTxt, "%I64d", pTftpGui->stat.qwTotalBytes);
   ListView_SetItemText (hListV, itemPos, FD_BYTES, szTxt);
 
-  wsprintf (szTxt, "%u", pTftpGui->stat.dwTransferSize);
+  wsprintf (szTxt, "%I64d", pTftpGui->stat.qwTransferSize);
   ListView_SetItemText (hListV, itemPos, FD_TOTAL, 
-                         pTftpGui->stat.dwTransferSize==0 ? "unknown" : szTxt);
+                         pTftpGui->stat.qwTransferSize==0 ? "unknown" : szTxt);
 
   wsprintf (szTxt, "%u", pTftpGui->stat.dwTotalTimeOut);
   ListView_SetItemText (hListV, itemPos, FD_TIMEOUT, szTxt);

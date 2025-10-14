@@ -47,7 +47,7 @@ static struct S_TftpClient
     DWORD         dwTimeout;        // Timeout en 1000e de secondes
     time_t        StartTime;        // Horodatage
     time_t        dLastUpdate;
-    DWORD         dwFileSize;
+    __int64       qwFileSize;
     DWORD         nTotRetrans;       // retransmissions complètes
     BOOL          bBreak;           // break has been selected
     DWORD         nPktSize;
@@ -69,8 +69,9 @@ static struct S_BlkSize
 } 
 tBlkSize [] = 
 { 
-  {"Default"}, {"128"},   {"512"},   {"1024"}, {"1428"},  
-  {"2048"}, {"4096"}, {"8192"}, {"16384"}, {"32768"},
+  {"Default"}, {"128"},   {"512"},   {"1024"},   {"1468"},  // 1468 = 1500 (Eth) - 20 (IP) - 8 (UDP) - 4 (TFTP)
+  {"2048"},    {"4096"},  {"8192"},  {"16384"}, {"32768"},
+  {"65536"}
 }; 
 
 
@@ -207,7 +208,8 @@ char *p; // beginning of file
 
 	// tsize is always set
    lstrcpy (& sTC.BufSnd [sTC.nToSend], "tsize"),    sTC.nToSend += sizeof "tsize";
-   sTC.nToSend += 1+wsprintf(& sTC.BufSnd [sTC.nToSend], "%d", sTC.dwFileSize);
+   sTC.nToSend += wsprintf(&sTC.BufSnd[sTC.nToSend], "%I64d", sTC.qwFileSize);   // should be 20 chars max
+   sTC.nToSend += 1;  // null termination
 } // PopulateXRQPacket
 
 
@@ -293,7 +295,7 @@ int              Rc;
 
        if (sTC.opcode==TFTP_RRQ  &&  IS_OPT (pOpt, TFTP_OPT_TSIZE))
        {    // prendre la valeur et envoyer un ACK du block #0
-          sTC.dwFileSize = atoi (pValue);
+          sTC.qwFileSize = _atoi64 (pValue);
           tps->th_opcode = htons (TFTP_ACK);
           tps->th_block = htons (0);
           SetTimer (hTftpClientWnd, WM_CLIENT_DATA, sTC.dwTimeout, NULL);
@@ -374,7 +376,7 @@ return TRUE;
 ///////////////////////////////////////////////////////
 BOOL TftpCliOpenFile (void)
 {
-
+LARGE_INTEGER large_filesize;
     // creation fichier ou lecture
     switch (sTC.opcode)
     {
@@ -388,7 +390,9 @@ BOOL TftpCliOpenFile (void)
                                  NULL );
             if (sTC.hFile == INVALID_HANDLE_VALUE)
                  return BadEndOfTransfer ("Error opening file %s for reading\nreturn code is %d (%s)", sTC.szFile, GetLastError (), LastErrorText() );
-            sTC.dwFileSize = GetFileSize (sTC.hFile, NULL);
+
+            GetFileSizeEx (sTC.hFile, &large_filesize);
+			sTC.qwFileSize = large_filesize.QuadPart;
             break;
 
         case TFTP_RRQ :
@@ -427,13 +431,18 @@ return sTC.hFile!=INVALID_HANDLE_VALUE;
 void static Statistics (time_t dNow)
 {
 char sz [64];
+DWORD dwTotalPktPerCent;
   if (dNow != sTC.dLastUpdate)
   {
-       wsprintf (sz, "block #%d", sTC.nCount);
+       wsprintf (sz, "block #%u", sTC.nCount);
        SetDlgItemText (GetParent(hTftpClientWnd), IDC_CLIENT_BLOCK, sz);
        sTC.dLastUpdate = dNow;
-       if (sTC.dwFileSize/100 != 0)
-               SendDlgItemMessage (GetParent(hTftpClientWnd), IDC_CLIENT_PROGRESS, PBM_SETPOS, (sTC.nCount*sTC.nPktSize)/(sTC.dwFileSize/100), 0);
+       dwTotalPktPerCent = (DWORD)(sTC.qwFileSize / 100 / sTC.nPktSize);
+       if (dwTotalPktPerCent > 0)  // do not divide by zero
+               SendDlgItemMessage ( GetParent(hTftpClientWnd), 
+                                    IDC_CLIENT_PROGRESS, PBM_SETPOS,
+                                    sTC.nCount / dwTotalPktPerCent,
+                                    0);
   } // time to update
 } // Statistics
 
@@ -461,7 +470,7 @@ char szCurDir[MAX_PATH];
           sTC.nToSend = sTC.nRcvd = sTC.nCount = sTC.nRetransmit = sTC.nPktSize = 0;
           sTC.s = INVALID_SOCKET;
           sTC.hFile = INVALID_HANDLE_VALUE;
-          sTC.dwFileSize = 0;
+          sTC.qwFileSize = 0;
           if (! sTC.bMultiFile)  sTC.nTotRetrans = 0;
           // init MD5 computation
           MD5Init (& sTC.m.ctx);

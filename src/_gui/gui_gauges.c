@@ -158,8 +158,8 @@ int   len;
 				   NI_NUMERICHOST );
 
     SetWindowText (hNW, szTitle);
-    if (pTftpGui->stat.dwTransferSize != 0)
-           wsprintf (szTitle, "File size : %u", pTftpGui->stat.dwTransferSize);
+    if (pTftpGui->stat.qwTransferSize != 0)
+           wsprintf (szTitle, "File size : %I64d", pTftpGui->stat.qwTransferSize);
     else
     {
           wsprintf (szTitle, "File size : Unknown");
@@ -189,16 +189,16 @@ char            szTitle [_MAX_PATH+sizeof " from 255.255.255.255 "];
 
    // update progress bar
    hGWnd = GetDlgItem (hGaugeWnd, IDC_TRF_PROGRESS);
-   if (pTftpGui->stat.dwTransferSize>100)
+   if (pTftpGui->stat.qwTransferSize >= 100) // do not divide by 0
         SendMessage (hGWnd, PBM_SETPOS, 
-                     pTftpGui->stat.dwTotalBytes/(pTftpGui->stat.dwTransferSize/100), 
+                     pTftpGui->stat.qwTotalBytes/(pTftpGui->stat.qwTransferSize/100), 
                      0);
 
    // Update stat text
-   wsprintf (szTitle, "%u Bytes %s \t %u Bytes/sec",
-             pTftpGui->stat.dwTotalBytes,
+   wsprintf (szTitle, "%I64d Bytes %s \t %I64d Bytes/sec",
+             pTftpGui->stat.qwTotalBytes,
              (pTftpGui->opcode == TFTP_RRQ) ? "sent" : "rcvd",
-             pTftpGui->stat.dwTotalBytes / (dNow-pTftpGui->stat.StartTime) );
+             pTftpGui->stat.qwTotalBytes / (dNow-pTftpGui->stat.StartTime) );
 
    SetWindowText (GetDlgItem (hGaugeWnd, IDC_FILE_STATS), szTitle);
    

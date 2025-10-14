@@ -34,11 +34,9 @@ enum e_TftpCnxDecod {  CNX_OACKTOSENT_RRQ = 1000,
 
 
 
-BOOL AllowSecurity (char *szFile, int op_code);
-
 // debug functions (thrown into tftp_dbg.c)
 struct LL_TftpInfo *DoDebugSendBlock (struct LL_TftpInfo *pTftp);
-struct LL_TftpInfo *DoDebugRcvAck (struct LL_TftpInfo *pTftp);
+struct LL_TftpInfo *DoDebugRcvAck  (struct LL_TftpInfo *pTftp);
 struct LL_TftpInfo *DoDebugRcvData (struct LL_TftpInfo *pTftp);
 struct LL_TftpInfo *DoDebugSendAck (struct LL_TftpInfo *pTftp);
 
@@ -48,7 +46,7 @@ struct LL_TftpInfo *DoDebugSendAck (struct LL_TftpInfo *pTftp);
 /////////////////////////////////////////////////////////
 
 
-BOOL SecAllowSecurity (const char *szFile, int op_code)
+static BOOL SecAllowSecurity (const char *szFile, int op_code)
 {
 BOOL          bForward = (    strstr (szFile, "..")==NULL
                           &&  strstr (szFile, "\\\\")==NULL);
@@ -333,6 +331,7 @@ size_t   Ark, Len;
 int   Rc;
 BOOL  bOptionsAccepted = FALSE;
 char  szExtendedName [2 * _MAX_PATH];
+LARGE_INTEGER large_filesize;
 
 #if (defined DEB_TEST || defined DEBUG)
   sSettings.LogLvl = 10;
@@ -454,7 +453,8 @@ char  szExtendedName [2 * _MAX_PATH];
         TftpSysError (pTftp, opcode==TFTP_RRQ ? ENOTFOUND : EACCESS, "CreateFile");
         return  CNX_FAILED;
     }
-    pTftp->st.dwTransferSize = GetFileSize (pTftp->r.hFile, NULL);
+    GetFileSizeEx (pTftp->r.hFile, & large_filesize);
+    pTftp->st.qwTransferSize = large_filesize.QuadPart;
 
     ///////////////////////////////////
     // File has been correctly created/opened
@@ -534,17 +534,17 @@ char  szExtendedName [2 * _MAX_PATH];
             // vérue si read request -> on envoie la taille du fichier
             if (opcode==TFTP_RRQ)
             {
-                wsprintf (pAck, "%d", pTftp->st.dwTransferSize);
+                wsprintf (pAck, "%I64d", pTftp->st.qwTransferSize);
                 pAck += lstrlen (pAck)+1;
-                pTftp->s.dwFileSize = pTftp->st.dwTransferSize;
+                pTftp->s.qwFileSize = pTftp->st.qwTransferSize;
             }
             else
             {
                 lstrcpy (pAck, pValue),     pAck += lstrlen (pAck)+1;
-                pTftp->s.dwFileSize = pTftp->st.dwTransferSize = atoi (pValue); // Trust client
+                pTftp->s.qwFileSize = pTftp->st.qwTransferSize = _atoi64(pValue); // Trust client
             }
 
-            LOG (10, "<%s> changed to <%u>", p, pTftp->st.dwTransferSize);
+            LOG (10, "<%s> changed to <%u>", p, pTftp->st.qwTransferSize);
             bOptionsAccepted = TRUE;
         }  // file size options
 
@@ -575,7 +575,7 @@ char  szExtendedName [2 * _MAX_PATH];
     pTftp->c.dwBytes  = (DWORD) (pAck - tpack->th_stuff);
 
     pTftp->c.nCount = pTftp->c.nLastToSend = opcode==TFTP_RRQ && !bOptionsAccepted ? 1 : 0;
-    pTftp->c.nLastBlockOfFile = pTftp->st.dwTransferSize / pTftp->s.dwPacketSize + 1 ;
+    pTftp->c.nLastBlockOfFile = (DWORD) (pTftp->st.qwTransferSize / pTftp->s.dwPacketSize) + 1 ;
     pTftp->s.ExtraWinSize = sSettings.WinSize / pTftp->s.dwPacketSize;
 
      if (bOptionsAccepted)
@@ -647,12 +647,12 @@ int nBlock;
     tp = (struct tftphdr *)pTftp->b.cnx_frame;
     // calcul du nb de block avec correction pour l'envoi
     nBlock = ntohs (tp->th_opcode)!=TFTP_RRQ ? pTftp->c.nCount : pTftp->c.nCount - 1;
-    LOG (2, "<%s>: %s %d blk%s, %d bytes in %d s. %d blk%s resent",
+    LOG (2, "<%s>: %s %d blk%s, %I64d bytes in %d s. %d blk%s resent",
                 tp->th_stuff,
                 ntohs (tp->th_opcode)==TFTP_RRQ ? "sent" : "rcvd",
                 nBlock,
                 PLURAL (nBlock),
-                pTftp->st.dwTotalBytes,
+                pTftp->st.qwTotalBytes,
                 (int) (time(NULL) - pTftp->st.StartTime),
                 pTftp->st.dwTotalTimeOut,
                 PLURAL (pTftp->st.dwTotalTimeOut));
@@ -736,7 +736,7 @@ LARGE_INTEGER liNul = { 0 };
 
     pTftp->c.nTimeOut = pTftp->c.nRetries = 0 ;
 	// for the stats, early acknowledgements are already sent
-	pTftp->st.dwTotalBytes = pTftp->s.ExtraWinSize * pTftp->s.dwPacketSize;
+	pTftp->st.qwTotalBytes = pTftp->s.ExtraWinSize * pTftp->s.dwPacketSize;
     do
     {
          // On Timeout:  cancel anticipation window
@@ -817,7 +817,7 @@ LARGE_INTEGER liNul = { 0 };
                         pTftp->c.nTimeOut = 0;
                         pTftp->c.nRetries = 0 ;
                         if (pTftp->c.nCount!=0)  // do not count OACK data block
-                                pTftp->st.dwTotalBytes += pTftp->c.dwBytes;  // set to 0 on error
+                                pTftp->st.qwTotalBytes += pTftp->c.dwBytes;  // set to 0 on error
                         pTftp->c.nCount++;        // next block
                   } // message was the ack of the last sent block
                   else
@@ -951,7 +951,7 @@ ntohs(tp->th_block), pTftp->c.nCount, pTftp->st.dwTotalBytes, pTftp->c.nRetries)
            if (ntohs(tp->th_block)==0 && pTftp->c.nCount==0)
           {
             pTftp->c.dwBytes = Rc-TFTP_DATA_HEADERSIZE;
-            if (pTftp->st.dwTotalBytes==0 && pTftp->c.nRetries==0)
+            if (pTftp->st.qwTotalBytes==0 && pTftp->c.nRetries==0)
              {
                  LOG (1, "WARNING: First block sent by client is #0, should be #1, fixed by Tftpd32");
                  pTftp->c.nCount--;  // this will fixed the pb
@@ -974,7 +974,7 @@ ntohs(tp->th_block), pTftp->c.nCount, pTftp->st.dwTotalBytes, pTftp->c.nRetries)
                if (pTftp->m.bInit)  MD5Update (& pTftp->m.ctx, tp->th_data, pTftp->c.dwBytes);
 
               // Stats
-               pTftp->st.dwTotalBytes += pTftp->c.dwBytes;    // set to 0 on error
+               pTftp->st.qwTotalBytes += pTftp->c.dwBytes;    // set to 0 on error
          } // # block received OK
        } // Something received
         else

@@ -114,7 +114,7 @@ struct S_Tftpd32Settings sSettings =
 	  FALSE,				 // report errors into event log
 	  DFLT_CONSOLE_PWD,      // console password
 	  FALSE,                 // do not support port option
-	  5,					 // after 5 seconds delete Tftp record
+	  10,					 // GuiRemanence : after 10 seconds delete Tftp record
 	  FALSE,				 // wait for ack of last TFTP packet
 	  TRUE,					 // IPv4
 	  TRUE,					 // IPv6

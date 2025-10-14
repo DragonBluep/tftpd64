@@ -14,22 +14,20 @@
 #define VER_PRODUCTVERSION_STR VER_FILEVERSION_STR
 
 #ifdef _WIN64
+#  define ARCH "64"
+#else
+#  define ARCH "32"
+#endif
+
+#define PRODUCT_NAME_STR   "Tftpd" ARCH
+#define ARCH_DESC_STR      ARCH "-bit"
+
 #ifdef SERVICE_EDITION
-#  define APP_EXE_NAME       "tftpd64_gui.exe"
+#  define APP_EXE_NAME       "tftpd" ARCH "_gui.exe"
 #else
-#  define APP_EXE_NAME       "tftpd64.exe"
+#  define APP_EXE_NAME       "tftpd" ARCH ".exe"
 #endif
-#define PRODUCT_NAME_STR   "Tftpd64"
-#define ARCH_DESC_STR      "64-bit"
-#else
-#ifdef SERVICE_EDITION
-#  define APP_EXE_NAME       "tftpd32_gui.exe"
-#else
-#  define APP_EXE_NAME       "tftpd32.exe"
-#endif
-#define PRODUCT_NAME_STR   "Tftpd32"
-#define ARCH_DESC_STR      "32-bit"
-#endif
+
 
 
 VS_VERSION_INFO VERSIONINFO

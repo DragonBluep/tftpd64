@@ -17,13 +17,13 @@
 
 /* -------- Arch-specific names -------- */
 #ifdef _WIN64
-#define APP_EXE_NAME       "tftpd64_svc.exe"
-#define PRODUCT_NAME_STR   "Tftpd64 Service Edition"
-#define ARCH_DESC_STR      "64-bit"
+#  define APP_EXE_NAME       "tftpd64_svc.exe"
+#  define PRODUCT_NAME_STR   "Tftpd64 Service Edition"
+#  define ARCH_DESC_STR      "64-bit"
 #else
-#define APP_EXE_NAME       "tftpd32_svc.exe"
-#define PRODUCT_NAME_STR   "Tftpd32 Service Edition"
-#define ARCH_DESC_STR      "32-bit"
+#  define APP_EXE_NAME       "tftpd32_svc.exe"
+#  define PRODUCT_NAME_STR   "Tftpd32 Service Edition"
+#  define ARCH_DESC_STR      "32-bit"
 #endif
 
 VS_VERSION_INFO VERSIONINFO
