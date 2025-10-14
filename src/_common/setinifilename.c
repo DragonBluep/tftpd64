@@ -42,7 +42,7 @@ const char *SetIniFileName (const char *szIniFile, char *szFullIniFile, size_t l
 {
 char szPath [_MAX_PATH];
 int  Rc;
-const char* p;
+char* p;
 
 	szFullIniFile[0] = 0;
 	szFullIniFile[--len] = 0;
@@ -63,10 +63,12 @@ const char* p;
 		if (FileExists(szFullIniFile)) return szFullIniFile;
 	}
 	// Try Program location, caling GetModuleFileName
-	if (GetModuleFileName(NULL, szPath, sizeof szPath) != 0)
+	if (      GetModuleFileName(NULL, szPath, sizeof szPath) != 0
+		 &&  (p = strrchr(szPath, '\\')) != NULL )
 	{
-		sprintf_s(szFullIniFile, len, "%s\\%s", szPath, szIniFile);
-		if (FileExists(szFullIniFile)) return szFullIniFile;
+		  *p = 0;
+		   sprintf_s(szFullIniFile, len, "%s\\%s", szPath, szIniFile);
+		  if (FileExists(szFullIniFile)) return szFullIniFile;
 	}
 
 	// try our registry entry, last NULL skip reading into Ini File !!

@@ -739,8 +739,6 @@ int       Rc;
 		  // GUI has to manage TFTP CLIENT tab -> no necessary to inform service part
 	      TR_ChgTabControl (hWnd, TFTPD32_TFTP_CLIENT, 
 							 sGuiSettings.uServices & TFTPD32_TFTP_CLIENT ? SERVICE_RUNNING : SERVICE_STOPPED);
-           // fallthrough to save also DHCP settings 
-		  PostMessage(hWnd, WM_SAVE_DHCP_SETTINGS, 0, 0);
           break;
       
       case WM_SAVE_DHCP_SETTINGS :
@@ -1085,10 +1083,10 @@ INITCOMMONCONTROLSEX  InitCtrls;
         ReturnToPreviousInstance (myMutEx, lpszCmdLine);
         return 0;
    }
-    // Locate help file
+#ifdef SERVICE_EDITION
+   // Locate help file (done in Gui_AskTFTPSettings for standalone edition)
     SetIniFileName (HELPFILE, szTftpd32Help, sizeof szTftpd32Help);
     // Opens socket
-#ifdef SERVICE_EDITION
      // read host which may be not local
     GetEnvironmentVariable(TFTP_HOST, szConsoleHost, sizeof szConsoleHost);
     SetIniFileName(INI_FILE, szTftpd32IniFile, sizeof szTftpd32IniFile);    // GUI & services processes must have the Ini path

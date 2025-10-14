@@ -662,7 +662,7 @@ char        szBrowsePath [MAX_PATH];
              break;
 
         case IDOK :
-			if ( ReadNewSettings (hWnd) )
+			if (ReadNewSettings(hWnd))  // save DHCP settings if any and check if settings are ok
 			{
 				PostMessage (GetParent (hWnd), WM_SAVE_SETTINGS, 0, 0);
 				EndDialog (hWnd, 0);
